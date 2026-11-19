@@ -6,10 +6,10 @@
 | 파일 | 내용 |
 | --- | --- |
 | `task.md` | 에이전트에 입력할 과제 티켓(요구사항 13개)과 놓치기 쉬운 곳 |
-| `fixtures.mjs` | seed 데이터 15건과 건별 기대 결과 |
+| `fixtures.mjs` | 이전 보존 정리 과제의 seed 데이터. 첨부 교체 과제에서는 쓰지 않는다 |
 | `reset.mjs` | 앱 DB 와 file-store 데이터 전체 초기화 |
-| `seed.mjs` | 실행일 기준 날짜로 seed 데이터 입력 |
-| `grade.mjs` | 요구사항별 HTTP 응답 채점 |
+| `seed.mjs` | 첨부 교체 과제 데이터를 API 로 입력 (교체 대상 A·B·C·E, 비교 대상 D) |
+| `grade.mjs` | 이전 보존 정리 과제의 채점. 첨부 교체 과제 채점은 아직 없다 |
 | `skills/` | 피드백 루프 조건에서만 설치하는 Codex 스킬 4개 (`orchestrate-feedback` 이 진입점) |
 
 Node.js 24 이상에서 의존성 없이 실행한다.
@@ -29,7 +29,7 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    ```sh
    cd $STUDY && git switch -c run/session main
    pnpm dev                                # 다른 터미널에서 계속 실행
-   node seed.mjs $STUDY/app                # 키트 저장소에서
+   node seed.mjs                           # 키트 저장소에서, 기본 http://localhost:8080
    ```
 
    **에이전트가 실행되는 동안 키트를 디스크에 두지 않는다.** 에이전트는 상위 폴더를 탐색해 `grade.mjs` 를 읽을 수 있다. seed 뒤에 키트 폴더를 지우고, 에이전트가 끝나면 다시 받는다.
@@ -47,7 +47,7 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    node reset.mjs $STUDY
    cd $STUDY && git switch -c run/feedback main
    pnpm dev
-   node seed.mjs $STUDY/app
+   node seed.mjs
    mkdir -p $STUDY/app/.codex && cp -R skills $STUDY/app/.codex/   # 키트를 지우기 전에 스킬 설치
    ```
 
