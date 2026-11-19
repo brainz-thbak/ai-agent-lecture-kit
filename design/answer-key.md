@@ -15,7 +15,7 @@ PUT /incidents/:id/attachment 에 { "name": 파일 이름, "content": 파일 내
 ## 저장소 구조
 
 ```text
-app/            백엔드 (Node + TypeScript + SQLite). basic, with-feedback 을 합친 단일 앱
+app/            백엔드 (Node + TypeScript + SQLite). 두 조건이 같은 앱에서 작업한다
 fe/             화면 (React)
 file-store/     파일 저장소. 내용 기반 중복 제거
 ```

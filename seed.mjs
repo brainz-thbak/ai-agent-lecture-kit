@@ -1,5 +1,5 @@
 // 사용법: node seed.mjs <프로젝트 경로> [--date YYYY-MM-DD]
-// 프로젝트 경로는 ai-agent-study/basic 또는 ai-agent-study/with-feedback 이다.
+// 프로젝트 경로는 ai-agent-study/app 이다.
 // 기준일 기본값은 오늘(KST)이다. 정리 기능은 실제 현재 시각으로 판단하므로 seed 와 채점은 같은 날 한다.
 // 앱 서버를 한 번 이상 실행해 DB 가 준비돼 있어야 하고, file-store 가 실행 중이어야 한다.
 import { existsSync } from 'node:fs'

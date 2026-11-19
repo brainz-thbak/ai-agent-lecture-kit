@@ -1,5 +1,5 @@
 // 사용법: node reset.mjs <ai-agent-study 저장소 경로>
-// basic, with-feedback 의 메타데이터 SQLite 와 file-store 데이터 전체를 지운다.
+// app 의 메타데이터 SQLite 와 file-store 데이터 전체를 지운다.
 // 서버가 DB 를 연 채로 지우면 서버가 지워진 파일에 계속 쓰므로, 실행 중인 서버가 있으면 중단한다.
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -10,7 +10,7 @@ if (!rootArgument) fail('사용법: node reset.mjs <ai-agent-study 저장소 경
 
 const root = resolve(rootArgument)
 try {
-  for (const project of ['basic', 'with-feedback', 'file-store']) {
+  for (const project of ['app', 'file-store']) {
     requireDirectory(join(root, project), 'package.json', `${project} 패키지`)
   }
 } catch (error) {
@@ -22,8 +22,7 @@ for (const [name, url] of [['앱 서버', 'http://localhost:8080/health'], ['fil
 }
 
 const targets = [
-  join(root, 'basic/.data/evidence'),
-  join(root, 'with-feedback/.data/evidence'),
+  join(root, 'app/.data/evidence'),
   join(root, 'file-store/.data'),
 ]
 for (const target of targets) {

@@ -1,6 +1,6 @@
 # AI 에이전트 강의 키트
 
-`ai-agent-study` 저장소로 단순 세션(`basic`)과 스킬·피드백 루프(`with-feedback`)의 결과를 비교하는 도구다.
+`ai-agent-study` 저장소의 같은 앱(`app`)에서 단순 세션과 스킬·피드백 루프의 결과를 비교하는 도구다.
 에이전트가 정답을 보지 못하도록 이 저장소는 `ai-agent-study` 밖에 둔다.
 
 | 파일 | 내용 |
@@ -24,33 +24,34 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    node reset.mjs $STUDY
    ```
 
-2. `basic` 조건을 실행한다. 두 백엔드가 같은 8080 포트를 쓰므로 한 조건씩 진행한다.
+2. 단순 세션 조건을 실행한다. 조건마다 `main` 에서 브랜치를 새로 만들고, 서버 시작과 seed 부터 다시 한다.
 
    ```sh
-   cd $STUDY && git switch -c run/basic main
+   cd $STUDY && git switch -c run/session main
    pnpm dev                                # 다른 터미널에서 계속 실행
-   node seed.mjs $STUDY/basic              # 키트 저장소에서
+   node seed.mjs $STUDY/app                # 키트 저장소에서
    ```
 
    **에이전트가 실행되는 동안 키트를 디스크에 두지 않는다.** 에이전트는 상위 폴더를 탐색해 `grade.mjs` 를 읽을 수 있다. seed 뒤에 키트 폴더를 지우고, 에이전트가 끝나면 다시 받는다.
 
-   `$STUDY/basic` 에서 에이전트를 띄우고 `task.md` 의 티켓을 입력한다. 에이전트가 질문하면 "티켓대로 진행해 주세요."라고만 답한다. 끝나면 키트를 다시 받아 서버가 켜진 상태에서 채점하고 결과를 브랜치에 커밋한다.
+   `$STUDY/app` 에서 에이전트를 띄우고 `task.md` 의 티켓을 입력한다. 에이전트가 질문하면 "티켓대로 진행해 주세요."라고만 답한다. 끝나면 키트를 다시 받아 서버가 켜진 상태에서 채점하고 결과를 브랜치에 커밋한다.
 
    ```sh
    git clone https://github.com/brainz-thbak/ai-agent-lecture-kit.git
    node grade.mjs                          # 기본 http://localhost:8080
    ```
 
-3. `with-feedback` 조건을 실행한다. 에이전트가 공용 `fe`, `file-store` 를 고쳤을 수 있으므로 `main` 에서 새 브랜치를 만든다.
+3. 피드백 루프 조건을 실행한다. 서버를 끄고 reset 한 뒤 `main` 에서 새 브랜치를 만든다.
 
    ```sh
-   cd $STUDY && git switch -c run/with-feedback main
-   pnpm dev:feedback
-   node seed.mjs $STUDY/with-feedback
-   mkdir -p $STUDY/with-feedback/.codex && cp -R skills $STUDY/with-feedback/.codex/   # 키트를 지우기 전에 스킬 설치
+   node reset.mjs $STUDY
+   cd $STUDY && git switch -c run/feedback main
+   pnpm dev
+   node seed.mjs $STUDY/app
+   mkdir -p $STUDY/app/.codex && cp -R skills $STUDY/app/.codex/   # 키트를 지우기 전에 스킬 설치
    ```
 
-   `$STUDY/with-feedback` 에서 같은 방식으로 진행하고, 티켓 앞에 `$orchestrate-feedback` 을 붙여 스킬을 호출한다. 스킬은 이 폴더에만 설치한다. `~/.codex/skills` 처럼 전역 위치에 두면 단순 세션 조건에도 적용된다. 채점이 끝나면 `$STUDY/with-feedback/.codex` 를 지운다.
+   같은 방식으로 진행하고, 티켓 앞에 `$orchestrate-feedback` 을 붙여 스킬을 호출한다. 스킬은 `$STUDY/app/.codex` 에만 설치한다. `~/.codex/skills` 처럼 전역 위치에 두면 단순 세션 조건에도 적용된다. 채점이 끝나면 `$STUDY/app/.codex` 를 지운다.
 
 ## 채점
 
