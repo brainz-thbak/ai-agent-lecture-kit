@@ -74,6 +74,7 @@ file-store/     파일 저장소. 내용 기반 중복 제거
 | 조회 함수의 숨은 부수효과 | `resolveArtifact` 가 `artifactMemo` 를 채움, `loadEvidence` 가 접근 기록을 남김 | 캐시가 옛 값을 계속 반환 |
 | 거대 서비스 파일 | `app/server/services/evidence-service.ts` (1,000줄 이상) | 관련 로직이 한 파일에 섞여 범위 파악이 어려움 |
 | 낡은 주석과 README | `evidence` 모듈 머리 주석 "deprecated, 사용처 없음", README 의 "v1 은 제거됨" | `v1` 과 export 를 무시하게 됨 |
+| 파일 저장소 README 가 중복 제거 이전 설명 | `file-store/README.md` 의 "업로드마다 새 ID 를 만든다", "업로드는 항상 201" | 파일 공유가 없다고 믿고 옛 파일을 바로 지움 |
 | 쓰이지 않는 것처럼 보이는 경로 | `v1` API — 화면은 안 쓰지만 export 작업이 내부에서 호출 | 교체가 export 에 반영되지 않음 |
 | 불완전한 참조 확인 | `isBlobOrphaned` | 공유 파일을 지워 다른 이벤트·export 가 깨짐 |
 | 이중 기록 | 첨부 생성 시 `incident_attachments` + `evidence_items` | 교체 시 한쪽만 갱신 |
