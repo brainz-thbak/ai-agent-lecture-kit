@@ -9,7 +9,8 @@
 | `fixtures.mjs` | seed 데이터 15건과 건별 기대 결과 |
 | `reset.mjs` | 앱 DB 와 file-store 데이터 전체 초기화 |
 | `seed.mjs` | 실행일 기준 날짜로 seed 데이터 입력 |
-| `grade.mjs` | 정리 API 를 두 번 실행하고 HTTP 응답으로 채점 |
+| `grade.mjs` | 요구사항별 HTTP 응답 채점 |
+| `skills/` | 피드백 루프 조건에서만 설치하는 Codex 스킬 4개 (`orchestrate-feedback` 이 진입점) |
 
 Node.js 24 이상에서 의존성 없이 실행한다.
 
@@ -31,9 +32,12 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    node seed.mjs $STUDY/basic              # 키트 저장소에서
    ```
 
-   `$STUDY/basic` 에서 에이전트를 띄우고 `task.md` 의 티켓을 입력한다. 에이전트가 질문하면 "티켓대로 진행해 주세요."라고만 답한다. 끝나면 서버가 켜진 상태에서 채점하고 결과를 브랜치에 커밋한다.
+   **에이전트가 실행되는 동안 키트를 디스크에 두지 않는다.** 에이전트는 상위 폴더를 탐색해 `grade.mjs` 를 읽을 수 있다. seed 뒤에 키트 폴더를 지우고, 에이전트가 끝나면 다시 받는다.
+
+   `$STUDY/basic` 에서 에이전트를 띄우고 `task.md` 의 티켓을 입력한다. 에이전트가 질문하면 "티켓대로 진행해 주세요."라고만 답한다. 끝나면 키트를 다시 받아 서버가 켜진 상태에서 채점하고 결과를 브랜치에 커밋한다.
 
    ```sh
+   git clone https://github.com/brainz-thbak/ai-agent-lecture-kit.git
    node grade.mjs                          # 기본 http://localhost:8080
    ```
 
@@ -43,9 +47,10 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    cd $STUDY && git switch -c run/with-feedback main
    pnpm dev:feedback
    node seed.mjs $STUDY/with-feedback
+   mkdir -p $STUDY/with-feedback/.codex && cp -R skills $STUDY/with-feedback/.codex/   # 키트를 지우기 전에 스킬 설치
    ```
 
-   `$STUDY/with-feedback` 에서 같은 방식으로 진행한다.
+   `$STUDY/with-feedback` 에서 같은 방식으로 진행하고, 티켓 앞에 `$orchestrate-feedback` 을 붙여 스킬을 호출한다. 스킬은 이 폴더에만 설치한다. `~/.codex/skills` 처럼 전역 위치에 두면 단순 세션 조건에도 적용된다. 채점이 끝나면 `$STUDY/with-feedback/.codex` 를 지운다.
 
 ## 채점
 

@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "회귀 영향 분석 응답",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "scope", "coverage", "regression_candidates", "issues"],
+  "properties": {
+    "status": { "enum": ["PASS", "REVISE", "BLOCKED"] },
+    "summary": { "$ref": "#/$defs/text" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change", "reviewed_sources", "limitations"],
+      "properties": {
+        "change": { "$ref": "#/$defs/text" },
+        "reviewed_sources": { "$ref": "#/$defs/textList" },
+        "limitations": { "$ref": "#/$defs/textList" }
+      }
+    },
+    "coverage": { "type": "array", "items": { "$ref": "#/$defs/coverage" } },
+    "regression_candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+    "issues": { "type": "array", "items": { "$ref": "#/$defs/issue" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": {
+        "properties": {
+          "coverage": {
+            "minItems": 1,
+            "items": { "properties": { "assessment": { "not": { "const": "UNDETERMINED" } } } }
+          },
+          "regression_candidates": { "items": { "properties": { "verification": { "type": "object" } } } },
+          "issues": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "REVISE" } } },
+      "then": { "properties": { "issues": { "items": { "properties": { "kind": { "const": "REQUIREMENT_GAP" } } }, "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "BLOCKED" } } },
+      "then": {
+        "properties": {
+          "issues": { "contains": { "properties": { "kind": { "enum": ["REQUESTER_DECISION", "MISSING_EVIDENCE"] } } } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "textList": { "type": "array", "items": { "$ref": "#/$defs/text" }, "uniqueItems": true },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion_id", "expected_change", "assessment", "candidate_ids", "rationale"],
+      "properties": {
+        "criterion_id": { "$ref": "#/$defs/text" },
+        "expected_change": { "$ref": "#/$defs/text" },
+        "assessment": { "enum": ["CANDIDATES_IDENTIFIED", "NO_CANDIDATE_IDENTIFIED", "UNDETERMINED"] },
+        "candidate_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^REG-[0-9]+$" }
+        },
+        "rationale": { "$ref": "#/$defs/text" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "assessment": { "const": "CANDIDATES_IDENTIFIED" } } },
+          "then": { "properties": { "candidate_ids": { "minItems": 1 } } }
+        },
+        {
+          "if": { "properties": { "assessment": { "const": "NO_CANDIDATE_IDENTIFIED" } } },
+          "then": { "properties": { "candidate_ids": { "maxItems": 0 } } }
+        }
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "criterion_ids", "importance", "assessment", "current_behavior", "failure_path", "evidence", "verification"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^REG-[0-9]+$" },
+        "criterion_ids": { "$ref": "#/$defs/textList", "minItems": 1 },
+        "importance": { "enum": ["REQUIRED", "OPTIONAL"] },
+        "assessment": { "enum": ["POTENTIAL", "REPRODUCED"] },
+        "current_behavior": { "$ref": "#/$defs/text" },
+        "failure_path": { "$ref": "#/$defs/text" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "minItems": 1 },
+        "verification": { "anyOf": [{ "$ref": "#/$defs/verification" }, { "type": "null" }] }
+      },
+      "if": { "properties": { "assessment": { "const": "REPRODUCED" } } },
+      "then": {
+        "properties": { "evidence": { "contains": { "properties": { "kind": { "const": "EXECUTION" } } } } }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "observation"],
+      "properties": {
+        "kind": { "enum": ["CODE", "DOCUMENT", "EXECUTION"] },
+        "source": { "$ref": "#/$defs/text" },
+        "observation": { "$ref": "#/$defs/text" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preconditions", "action", "expected_result"],
+      "properties": {
+        "preconditions": { "$ref": "#/$defs/textList" },
+        "action": { "$ref": "#/$defs/text" },
+        "expected_result": { "$ref": "#/$defs/text" }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "related_ids", "reason", "next_action"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^ISSUE-[0-9]+$" },
+        "kind": { "enum": ["REQUIREMENT_GAP", "REQUESTER_DECISION", "MISSING_EVIDENCE"] },
+        "related_ids": { "$ref": "#/$defs/textList" },
+        "reason": { "$ref": "#/$defs/text" },
+        "next_action": { "$ref": "#/$defs/text" }
+      }
+    }
+  }
+}

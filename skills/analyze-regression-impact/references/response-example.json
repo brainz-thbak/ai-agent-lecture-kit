@@ -1,0 +1,45 @@
+{
+  "status": "BLOCKED",
+  "summary": "탈퇴한 회원이 올린 파일을 삭제할 때 팀 문서에 공유된 파일을 어떻게 처리할지 결정이 필요하다.",
+  "scope": {
+    "change": "탈퇴한 회원이 올린 파일을 삭제한다.",
+    "reviewed_sources": ["예시 코드의 getTeamAttachment 함수"],
+    "limitations": ["탈퇴 후 팀 문서에 공유된 파일의 보존 정책을 확인하지 못했다."]
+  },
+  "coverage": [
+    {
+      "criterion_id": "AC-01",
+      "expected_change": "회원이 탈퇴하면 해당 회원이 올린 파일을 삭제한다.",
+      "assessment": "CANDIDATES_IDENTIFIED",
+      "candidate_ids": ["REG-01"],
+      "rationale": "팀 문서와 회원 업로드가 같은 파일 ID를 참조한다."
+    }
+  ],
+  "regression_candidates": [
+    {
+      "id": "REG-01",
+      "criterion_ids": ["AC-01"],
+      "importance": "REQUIRED",
+      "assessment": "POTENTIAL",
+      "current_behavior": "팀 구성원은 팀 문서에 첨부된 파일을 다운로드할 수 있다.",
+      "failure_path": "탈퇴 처리에서 업로더를 기준으로 파일을 삭제하면 팀 문서에 남은 첨부 연결로 다운로드할 수 없게 된다.",
+      "evidence": [
+        {
+          "kind": "CODE",
+          "source": "예시 코드의 getTeamAttachment 함수",
+          "observation": "팀 문서의 첨부를 업로드 때 저장한 원본 파일 ID로 조회한다."
+        }
+      ],
+      "verification": null
+    }
+  ],
+  "issues": [
+    {
+      "id": "ISSUE-01",
+      "kind": "REQUESTER_DECISION",
+      "related_ids": ["AC-01", "REG-01"],
+      "reason": "공유 파일을 삭제하면 팀 문서에서 다운로드할 수 없고, 보존하면 해당 파일은 회원 탈퇴 후에도 저장소에 남는다.",
+      "next_action": "팀 문서가 참조하는 파일도 삭제할지, 팀 문서의 다운로드를 유지하기 위해 보존할지 요청자에게 확인한다."
+    }
+  ]
+}
