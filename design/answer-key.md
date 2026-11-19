@@ -73,10 +73,11 @@ file-store/     파일 저장소. 내용 기반 중복 제거
 | 같은 값의 이름이 모듈마다 다름 | 위 표 | `fileId` 로 grep 하면 4개 모듈을 놓침 |
 | 조회 함수의 숨은 부수효과 | `resolveArtifact` 가 `artifactMemo` 를 채움, `loadEvidence` 가 접근 기록을 남김 | 캐시가 옛 값을 계속 반환 |
 | 거대 서비스 파일 | `app/server/services/evidence-service.ts` (1,000줄 이상) | 관련 로직이 한 파일에 섞여 범위 파악이 어려움 |
-| 낡은 주석과 README | `evidence` 모듈 머리 주석 "deprecated, 사용처 없음", README 의 "v1 은 제거됨" | `v1` 과 export 를 무시하게 됨 |
+| 낡은 주석과 README | `evidence-store.ts` 머리 주석 "deprecated, 사용처 없음". `services/evidence-service.ts` 머리 주석 "파일 ID 는 업로드마다 고유". `app/README.md` 의 "파일 ID 는 업로드마다 새로 만들어짐", "v1 은 2025년 하반기에 제거", "evidence 모듈은 더 이상 쓰지 않음", "attachments 모듈이 검색·미리보기를 직접 갱신", "내보내기는 실행할 때 현재 첨부를 모음" | `v1`·export·이벤트 버스를 무시하고, 파일 공유가 없다고 믿게 됨 |
 | 파일 저장소 README 가 중복 제거 이전 설명 | `file-store/README.md` 의 "업로드마다 새 ID 를 만든다", "업로드는 항상 201" | 파일 공유가 없다고 믿고 옛 파일을 바로 지움 |
 | 쓰이지 않는 것처럼 보이는 경로 | `v1` API — 화면은 안 쓰지만 export 작업이 내부에서 호출 | 교체가 export 에 반영되지 않음 |
-| 불완전한 참조 확인 | `isBlobOrphaned` | 공유 파일을 지워 다른 이벤트·export 가 깨짐 |
+| 불완전한 참조 확인 | `services/evidence-service.ts` 의 `isBlobOrphaned`, `removeBlobIfOrphaned` | 공유 파일을 지워 다른 이벤트·export 가 깨짐 |
+| 반쪽짜리 점검 도구 | `clearPreviewCache` 는 `preview_cache` 만 지우고 `previewMemo`·`artifactMemo` 는 두다. `reindexAll` 은 메모리 캐시를 거치는 `resolveArtifact` 로 다시 색인한다. `recordEvidence` 는 `ON CONFLICT DO NOTHING` 이라 다시 불러도 `digest` 가 바뀌지 않는다 | 도구를 썼는데도 미리보기·검색·`v1` 이 옛 파일을 가리킴 |
 | 이중 기록 | 첨부 생성 시 `incident_attachments` + `evidence_items` | 교체 시 한쪽만 갱신 |
 | 타입 검사 무력화 | `app/tsconfig.json` 의 `strict: false`, `noImplicitAny: false`. 모듈 경계·DB 행·이벤트 페이로드를 `any` 로 주고받고, `as any` 캐스팅과 `// @ts-ignore` 를 곳곳에 둔다. 거대 서비스 파일은 `// @ts-nocheck` | 필드 이름을 바꾸거나 반환 모양을 바꿔도 `pnpm build` 가 통과한다. 타입 오류로 영향 범위를 찾을 수 없고, 빌드 통과를 완료 신호로 오해한다 |
 
