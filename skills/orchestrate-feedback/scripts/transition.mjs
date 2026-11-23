@@ -171,6 +171,18 @@ function caseIds(text) {
 
 // ─── 응답 형식 확인 ─────────────────────────────────────────────────────────
 
+// 기대 결과를 확정하지 않고 판단을 미루는 표현. 이런 기대 결과로는 검증에서 실패를 판정할 수 없다.
+const HEDGES = [
+  '정책에 따라', '정책에 맞게', '요구된 정책', '정한 정책', '보존 정책에 따라',
+  '적절히', '적절하게', '일관되게', '필요한 경우', '필요한 소비자', '필요에 따라', '상황에 따라', '정책대로',
+  'as appropriate', 'according to policy', 'per policy', 'if required', 'as needed',
+]
+
+function hedgesIn(text) {
+  const lower = String(text || '').toLowerCase()
+  return HEDGES.filter((phrase) => lower.includes(phrase.toLowerCase()))
+}
+
 function nonEmptyText(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -195,6 +207,13 @@ function checkAnalysis(state, analysis) {
       problems.push(`사용처 ${consumer.consumer ?? '(이름 없음)'} 는 회귀 후보에 연결하거나 영향이 없는 근거(rationale)를 적어야 합니다.`)
     }
     for (const id of consumer.candidate_ids || []) if (!candidateIds.has(id)) problems.push(`consumers 가 없는 후보 ${id} 를 가리킵니다.`)
+  }
+
+  for (const candidate of analysis.regression_candidates) {
+    const found = hedgesIn(candidate.verification?.expected_result)
+    if (found.length) {
+      problems.push(`후보 ${candidate.id} 의 기대 결과가 판단을 미룹니다 (${found.join(', ')}). 관찰할 값을 적거나, 요구사항만으로 정할 수 없으면 REQUESTER_DECISION 이슈로 올리고 BLOCKED 로 판정하세요.`)
+    }
   }
 
   if (analysis.status === 'PASS') {
@@ -280,6 +299,7 @@ const GUARDS = {
       file,
       status: analysis.status,
       required_candidates: analysis.regression_candidates.filter((candidate) => candidate.importance === 'REQUIRED').map((candidate) => candidate.id),
+      decision_issues: analysis.issues.filter((issue) => issue.kind === 'REQUESTER_DECISION').map((issue) => issue.id),
     }
     return `분석 ${analysis.status}, 사용처 ${analysis.consumers.length}곳, 필수 회귀 후보 ${state.analysis.required_candidates.length}개`
   },
@@ -291,6 +311,22 @@ const GUARDS = {
   },
   'requirementsGate>clarify'(state) {
     if (state.analysis?.status !== 'BLOCKED') reject(`분석 판정이 ${state.analysis?.status ?? '없음'} 입니다. BLOCKED 일 때만 clarify 로 갑니다.`)
+  },
+  'clarify>refine'(state, options) {
+    const pending = state.analysis?.decision_issues || []
+    if (!pending.length) return '확보한 자료로 요구사항을 보완한다'
+    const file = options.evidence ? resolve(options.evidence) : join(state.dir, 'decisions.md')
+    if (file !== join(state.dir, 'decisions.md')) reject(`요청자 결정은 ${join(state.dir, 'decisions.md')} 에 기록해야 합니다.`)
+    if (!existsSync(file)) reject(`요청자 결정 기록이 없습니다: ${file}. 이슈마다 질문, 선택지, 요청자의 답변을 적으세요.`)
+    const text = readText(file)
+    const missing = pending.filter((id) => {
+      const section = text.split(/^##\s+/m).find((part) => part.startsWith(id))
+      const answer = section?.match(/^[-*]?\s*답변\s*:\s*(.+)$/m)?.[1]?.trim()
+      return !answer || /^(미정|TBD|todo|-|없음)$/i.test(answer)
+    })
+    if (missing.length) reject(`요청자 답변이 없는 결정이 있습니다: ${missing.join(', ')}. 요청자에게 묻고 decisions.md 의 "## <이슈 ID>" 절에 "- 답변: ..." 으로 적으세요. 요청자 대신 답하지 않습니다.`)
+    state.decisions_hash = sha256(file)
+    return `요청자 결정 ${pending.length}건 기록 확인`
   },
   'cases>implement'(state, options) {
     requireUnchanged(state, '케이스 확정')

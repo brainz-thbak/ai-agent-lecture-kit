@@ -20,6 +20,7 @@ description: 요구사항 구체화, 회귀 영향 분석, 구현, 독립 검증
   cases.md               확정 케이스
   implementation-<n>.md  구현자 보고. 회차마다 새 파일
   verification-<n>.json  검증 응답. 회차마다 새 파일
+  decisions.md           요청자 결정 기록. 질문마다 "## <이슈 ID>" 절에 질문, 선택지, 답변
 ```
 
 이 폴더 밖의 프로젝트 파일(예: `.gitignore`)은 산출물을 위해 바꾸지 않는다.
@@ -51,8 +52,15 @@ node <스킬 폴더>/scripts/transition.mjs move <다음 노드> --dir <작업 �
 - **`refine`** — [요구사항 구체화 스킬](../refine-requirements/SKILL.md)로 작업 폴더의 `requirements.md` 를 작성한다. 맨 위 front matter 에 `task_id` 를 적고, 프로젝트 지침에서 찾은 빌드·타입 검사·테스트 명령을 `## 검증 명령` 절에 적는다. `revise` 에서 돌아왔으면 직전 분석의 `REQUIREMENT_GAP` 이슈를 모두 전달하고, 각 이슈가 수용 기준이나 미결 결정으로 반영되었는지 확인한다.
 - **`analyze`** — [회귀 영향 분석 스킬](../analyze-regression-impact/SKILL.md)을 실행한다. `status` 로 확인한 `task_id`, `requirements_hash`, 요구사항 파일 경로와 새 응답 파일 경로(`analysis-<n>.json`)를 전달하고, 응답을 그 파일에 저장하게 한다. 저장된 파일을 `--evidence` 로 넘겨 `requirementsGate` 로 이동한다.
 - **`requirementsGate`** — 분석 판정에 따라 `cases`(PASS), `revise`(REVISE), `clarify`(BLOCKED)로 이동한다. 스크립트가 판정과 다른 이동을 거부한다.
-- **`revise` / `clarify`** — `revise` 는 분석의 보완점을 정리해 `refine` 으로 돌아간다. `clarify` 는 필요한 결정을 요청자에게 확인하거나 자료를 확보한 뒤 `refine` 으로 돌아간다.
+- **`revise`** — 분석의 보완점을 정리해 `refine` 으로 돌아간다.
+- **`clarify`** — 분석의 `REQUESTER_DECISION` 이슈마다 **요청자에게 직접 묻는다.** 질문에는 선택지와 선택마다 달라지는 동작, 영향을 받는 기준·후보 ID 를 넣는다. 답을 받으면 `decisions.md` 의 `## <이슈 ID>` 절에 `- 질문:`, `- 선택지:`, `- 답변:` 으로 적고, `decisions.md` 를 `--evidence` 로 넘겨 `refine` 으로 간다. 스크립트는 모든 결정 이슈에 답변이 있어야 넘어가게 한다.
+  - **요청자 대신 답하지 않는다.** 코드의 현재 동작, 다른 기능과의 대칭, "일반적인 관례"를 근거로 결정을 채우지 않는다.
+  - 요청자가 답할 수 없거나 답을 받을 수 없으면 `incomplete` 로 간다.
+  - `MISSING_EVIDENCE` 이슈는 필요한 자료를 확보해 `refine` 으로 돌아간다.
 - **`cases`** — 작업 폴더의 `cases.md` 에 신규 동작과 회귀 케이스를 확정한다. 모든 수용 기준(`AC-xx`)과 분석의 `REQUIRED` 회귀 후보(`REG-xx`)를 케이스에 하나 이상 연결한다. 케이스마다 `CASE-01` 형식의 ID, 관련 기준·후보 ID, 필수 여부, 사전 조건, 실행 절차, 기대 결과를 적고 상태를 `UNVERIFIED` 로 둔다. 분석 후보의 `verification` 을 회귀 케이스의 절차와 기대 결과로 옮긴다. `cases.md` 를 `--evidence` 로 넘겨 `implement` 로 이동한다.
+  - **사전 조건은 실제로 만들 수 있어야 한다.** 제품 코드를 고치지 않고 기존 API·도구로 만들 수 있는지 확인한다. 존재하지 않는 장치(오류 주입, 테스트 훅 등)를 가정하지 않는다. 만들 수 없는 상태가 필요하면 그 기준을 요구사항에서 다시 다룬다.
+  - **회귀 케이스는 분석이 찾은 결합 형태를 재현한다.** 같은 값을 여러 곳이 공유하는 경우, 같은 그룹에 속하는 경우, 이미 요청된 작업이 있는 경우처럼, 후보의 `failure_path` 가 일어나는 상황을 사전 조건으로 만든다.
+  - 기대 결과에는 관찰할 API 와 값을 적는다. "새 값을 반영한다" 대신 어느 응답의 어느 값이 무엇이어야 하는지 쓴다.
 
 ## 구현과 검증
 
