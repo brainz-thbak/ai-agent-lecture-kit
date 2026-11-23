@@ -48,7 +48,7 @@ node <스킬 폴더>/scripts/transition.mjs move <다음 노드> --dir <작업 �
 
 ## 구현 전
 
-- **`refine`** — [요구사항 구체화 스킬](../refine-requirements/SKILL.md)로 작업 폴더의 `requirements.md` 를 작성한다. 맨 위 front matter 에 `task_id` 를 적는다. `revise` 에서 돌아왔으면 직전 분석의 `REQUIREMENT_GAP` 이슈를 모두 전달하고, 각 이슈가 수용 기준이나 미결 결정으로 반영되었는지 확인한다.
+- **`refine`** — [요구사항 구체화 스킬](../refine-requirements/SKILL.md)로 작업 폴더의 `requirements.md` 를 작성한다. 맨 위 front matter 에 `task_id` 를 적고, 프로젝트 지침에서 찾은 빌드·타입 검사·테스트 명령을 `## 검증 명령` 절에 적는다. `revise` 에서 돌아왔으면 직전 분석의 `REQUIREMENT_GAP` 이슈를 모두 전달하고, 각 이슈가 수용 기준이나 미결 결정으로 반영되었는지 확인한다.
 - **`analyze`** — [회귀 영향 분석 스킬](../analyze-regression-impact/SKILL.md)을 실행한다. `status` 로 확인한 `task_id`, `requirements_hash`, 요구사항 파일 경로와 새 응답 파일 경로(`analysis-<n>.json`)를 전달하고, 응답을 그 파일에 저장하게 한다. 저장된 파일을 `--evidence` 로 넘겨 `requirementsGate` 로 이동한다.
 - **`requirementsGate`** — 분석 판정에 따라 `cases`(PASS), `revise`(REVISE), `clarify`(BLOCKED)로 이동한다. 스크립트가 판정과 다른 이동을 거부한다.
 - **`revise` / `clarify`** — `revise` 는 분석의 보완점을 정리해 `refine` 으로 돌아간다. `clarify` 는 필요한 결정을 요청자에게 확인하거나 자료를 확보한 뒤 `refine` 으로 돌아간다.
@@ -57,7 +57,7 @@ node <스킬 폴더>/scripts/transition.mjs move <다음 노드> --dir <작업 �
 ## 구현과 검증
 
 - **`implement`** — **첫 구현과 수정은 반드시 구현 서브에이전트에 위임한다.** 첫 구현에는 구현자 한 명을 실행하고, 재작업은 기존 구현자에게 이어서 맡긴다. 작업 ID, 요구사항 파일과 확정 케이스 경로, 작업공간과 수정 범위, 보고를 저장할 파일 경로(`implementation-<n>.md`)를 전달한다. 구현자는 제품 코드만 수정하며 요구사항과 테스트 케이스의 수정 및 테스트 실행은 금지한다. 보고 파일에 변경 파일, 변경 내용, 남은 문제를 적게 하고, 그 파일을 `--evidence` 로 넘겨 `verify` 로 이동한다. 요구사항이나 케이스가 바뀌었으면 스크립트가 거부한다.
-- **`verify`** — 별도의 검증 서브에이전트를 실행한다. [구현·회귀 검증 스킬](../verify-implementation/SKILL.md)에 요구사항 파일, 확정 케이스, 현재 변경 범위, 응답 파일 경로(`verification-<n>.json`)를 전달한다. 첫 검증과 재검증 모두 확정된 신규 동작 및 회귀 케이스를 모두 실행한다. 저장된 응답을 `--evidence` 로 넘겨 `verificationGate` 로 이동한다.
+- **`verify`** — 별도의 검증 서브에이전트를 실행한다. [구현·회귀 검증 스킬](../verify-implementation/SKILL.md)에 요구사항 파일, 확정 케이스, 현재 변경 범위, 응답 파일 경로(`verification-<n>.json`)를 전달한다. 첫 검증과 재검증 모두 확정된 신규 동작 및 회귀 케이스와 `## 검증 명령` 을 모두 실행한다. 검증 명령을 실행하지 못했다면 검증 판정은 `PASS` 가 될 수 없다. 저장된 응답을 `--evidence` 로 넘겨 `verificationGate` 로 이동한다.
 - **`verificationGate`** — 검증 판정에 따라 `done`(PASS), `feedback`(FAIL), `resolve`(BLOCKED)로 이동한다.
 - **`feedback`** — 실패한 케이스 ID, 재현 절차, 기대값, 실제값을 기존 구현자에게 전달하고 `implement` 로 돌아간다. 새 근거 없이 같은 실패가 반복되면 `incomplete` 로 간다.
 - **`resolve`** — 누락된 입력, 테스트 또는 실행 환경 문제를 해결하고 `verify` 로 돌아간다. 기대 동작에 새 결정이 필요하면 요청자에게 확인하고 `refine` 으로 돌아간다.

@@ -123,7 +123,24 @@ function readRequirements(state) {
   const body = lines.slice(headerEnd + 1).join('\n')
   const criteria = [...new Set(body.match(/\bAC-\d+\b/g) || [])]
   if (!criteria.length) reject('요구사항에 AC-01 형식의 수용 기준이 하나 이상 있어야 합니다.')
-  return { hash: sha256(path), criteria }
+  return { hash: sha256(path), criteria, commands: readCommands(lines.slice(headerEnd + 1)) }
+}
+
+// "## 검증 명령" 절의 목록 항목마다 백틱으로 감싼 명령 하나를 읽는다. 실행 위치는 백틱 밖에 적는다.
+// 명령이 없으면 그 이유를 적은 항목이 있어야 한다.
+function readCommands(lines) {
+  const start = lines.findIndex((line) => /^##\s*검증 명령\s*$/.test(line))
+  if (start < 0) reject('요구사항에 "## 검증 명령" 절이 필요합니다. 빌드·타입 검사·테스트 명령을 적거나, 없으면 그 이유를 적으세요.')
+  const end = lines.findIndex((line, index) => index > start && /^#{1,2}\s/.test(line))
+  const items = lines.slice(start + 1, end < 0 ? undefined : end).filter((line) => /^\s*[-*]\s+\S/.test(line))
+  if (!items.length) reject('"## 검증 명령" 절이 비어 있습니다. 명령을 목록으로 적거나, 없으면 그 이유를 한 줄로 적으세요.')
+  const commands = []
+  for (const line of items) {
+    const spans = [...line.matchAll(/`([^`]+)`/g)].map((match) => match[1].trim())
+    if (spans.length > 1) reject(`검증 명령 항목에는 백틱으로 감싼 명령이 하나만 있어야 합니다: ${line.trim()}\n실행 위치는 백틱 밖에 적으세요. 예: - \`npx tsc --noEmit -p .\` (app 에서)`)
+    if (spans.length === 1 && !commands.includes(spans[0])) commands.push(spans[0])
+  }
+  return commands
 }
 
 function requireUnchanged(state, label) {
@@ -197,7 +214,17 @@ function checkVerification(state, verification) {
   if (reportedFile !== realpathSync(state.requirements_file)) problems.push(`requirements_file 이 ${state.requirements_file} 가 아닙니다.`)
   if (!['PASS', 'FAIL', 'BLOCKED'].includes(verification.status)) problems.push('status 는 PASS, FAIL, BLOCKED 중 하나여야 합니다.')
   if (!Array.isArray(verification.results)) problems.push('results 배열이 필요합니다.')
+  if (!Array.isArray(verification.commands)) problems.push('commands 배열이 필요합니다. 실행한 검증 명령과 종료 코드를 적으세요.')
   if (problems.length) return problems
+
+  const runs = new Map(verification.commands.map((run) => [String(run.command ?? '').trim(), run]))
+  for (const command of state.commands || []) {
+    const run = runs.get(command)
+    if (verification.status === 'PASS') {
+      if (!run) problems.push(`PASS 인데 검증 명령 \`${command}\` 의 실행 기록이 없습니다. 실행하지 못했다면 BLOCKED 로 보고하세요.`)
+      else if (run.exit_code !== 0) problems.push(`PASS 인데 검증 명령 \`${command}\` 의 종료 코드가 ${run.exit_code} 입니다.`)
+    }
+  }
 
   const reported = new Map(verification.results.map((result) => [result.id, result]))
   if (verification.status === 'PASS') {
@@ -220,13 +247,14 @@ function checkVerification(state, verification) {
 
 const GUARDS = {
   'refine>analyze'(state) {
-    const { hash, criteria } = readRequirements(state)
+    const { hash, criteria, commands } = readRequirements(state)
     state.requirements_hash = hash
     state.criteria = criteria
+    state.commands = commands
     state.analysis = null
     state.cases_hash = null
     state.case_ids = []
-    return `요구사항 해시 ${hash.slice(0, 12)}, 수용 기준 ${criteria.length}개`
+    return `요구사항 해시 ${hash.slice(0, 12)}, 수용 기준 ${criteria.length}개, 검증 명령 ${commands.length}개`
   },
   'analyze>requirementsGate'(state, options) {
     requireUnchanged(state, '분석')
@@ -320,6 +348,7 @@ function init(positional, options) {
     analysis: null,
     cases_hash: null,
     case_ids: [],
+    commands: [],
     verification: null,
     feedback_rounds: 0,
     consumed: [],
@@ -342,6 +371,7 @@ function status(state) {
     requirements_hash: state.requirements_hash,
     requirements_unchanged: current,
     cases_file: state.cases_file,
+    commands: state.commands,
     analysis: state.analysis,
     verification: state.verification,
     feedback_rounds: state.feedback_rounds,

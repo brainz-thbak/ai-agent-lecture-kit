@@ -3,36 +3,137 @@
   "title": "구현·회귀 검증 응답",
   "type": "object",
   "additionalProperties": false,
-  "required": ["status", "task_id", "requirements_file", "summary", "results", "issues"],
+  "required": [
+    "status",
+    "task_id",
+    "requirements_file",
+    "summary",
+    "commands",
+    "results",
+    "issues"
+  ],
   "properties": {
-    "status": { "enum": ["PASS", "FAIL", "BLOCKED"] },
-    "task_id": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "requirements_file": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-    "summary": { "$ref": "#/$defs/text" },
-    "results": { "type": "array", "items": { "$ref": "#/$defs/result" } },
-    "issues": { "type": "array", "items": { "$ref": "#/$defs/issue" } }
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    },
+    "task_id": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/text"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requirements_file": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/text"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "summary": {
+      "$ref": "#/$defs/text"
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    }
   },
   "allOf": [
     {
       "if": {
         "anyOf": [
-          { "properties": { "task_id": { "type": "null" } } },
-          { "properties": { "requirements_file": { "type": "null" } } }
+          {
+            "properties": {
+              "task_id": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "properties": {
+              "requirements_file": {
+                "type": "null"
+              }
+            }
+          }
         ]
       },
-      "then": { "properties": { "status": { "const": "BLOCKED" }, "results": { "maxItems": 0 } } }
+      "then": {
+        "properties": {
+          "status": {
+            "const": "BLOCKED"
+          },
+          "results": {
+            "maxItems": 0
+          }
+        }
+      }
     },
     {
-      "if": { "properties": { "status": { "const": "PASS" } } },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "PASS"
+          }
+        }
+      },
       "then": {
         "properties": {
           "results": {
-            "contains": { "properties": { "required": { "const": true }, "status": { "const": "PASS" } } },
+            "contains": {
+              "properties": {
+                "required": {
+                  "const": true
+                },
+                "status": {
+                  "const": "PASS"
+                }
+              }
+            },
             "not": {
               "contains": {
                 "anyOf": [
-                  { "properties": { "status": { "const": "FAIL" } } },
-                  { "properties": { "required": { "const": true }, "status": { "const": "UNVERIFIED" } } }
+                  {
+                    "properties": {
+                      "status": {
+                        "const": "FAIL"
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      },
+                      "status": {
+                        "const": "UNVERIFIED"
+                      }
+                    }
+                  }
                 ]
               }
             }
@@ -41,56 +142,219 @@
       }
     },
     {
-      "if": { "properties": { "status": { "const": "FAIL" } } },
-      "then": { "properties": { "results": { "contains": { "properties": { "status": { "const": "FAIL" } } } } } }
-    },
-    {
-      "if": { "properties": { "status": { "const": "BLOCKED" } } },
+      "if": {
+        "properties": {
+          "status": {
+            "const": "FAIL"
+          }
+        }
+      },
       "then": {
         "properties": {
-          "results": { "not": { "contains": { "properties": { "status": { "const": "FAIL" } } } } },
-          "issues": { "minItems": 1 }
+          "results": {
+            "contains": {
+              "properties": {
+                "status": {
+                  "const": "FAIL"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "BLOCKED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "FAIL"
+                  }
+                }
+              }
+            }
+          },
+          "issues": {
+            "minItems": 1
+          }
         }
       }
     }
   ],
   "$defs": {
-    "text": { "type": "string", "minLength": 1 },
-    "textList": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "textList": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
     "result": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "related_ids", "required", "status", "procedure", "expected", "actual", "evidence"],
+      "required": [
+        "id",
+        "kind",
+        "related_ids",
+        "required",
+        "status",
+        "procedure",
+        "expected",
+        "actual",
+        "evidence"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/text" },
-        "kind": { "enum": ["REQUIREMENT", "REGRESSION"] },
-        "related_ids": { "$ref": "#/$defs/textList", "minItems": 1 },
-        "required": { "type": "boolean" },
-        "status": { "enum": ["PASS", "FAIL", "UNVERIFIED"] },
-        "procedure": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-        "expected": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-        "actual": { "anyOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
-        "evidence": { "$ref": "#/$defs/textList" }
+        "id": {
+          "$ref": "#/$defs/text"
+        },
+        "kind": {
+          "enum": [
+            "REQUIREMENT",
+            "REGRESSION"
+          ]
+        },
+        "related_ids": {
+          "$ref": "#/$defs/textList",
+          "minItems": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNVERIFIED"
+          ]
+        },
+        "procedure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actual": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/text"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/textList"
+        }
       },
-      "if": { "properties": { "status": { "enum": ["PASS", "FAIL"] } } },
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL"
+            ]
+          }
+        }
+      },
       "then": {
         "properties": {
-          "procedure": { "type": "string" },
-          "expected": { "type": "string" },
-          "actual": { "type": "string" },
-          "evidence": { "minItems": 1 }
+          "procedure": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "actual": {
+            "type": "string"
+          },
+          "evidence": {
+            "minItems": 1
+          }
         }
       }
     },
     "issue": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "related_ids", "reason", "next_action"],
+      "required": [
+        "kind",
+        "related_ids",
+        "reason",
+        "next_action"
+      ],
       "properties": {
-        "kind": { "enum": ["INPUT", "REQUIREMENT", "TEST", "ENVIRONMENT"] },
-        "related_ids": { "$ref": "#/$defs/textList" },
-        "reason": { "$ref": "#/$defs/text" },
-        "next_action": { "$ref": "#/$defs/text" }
+        "kind": {
+          "enum": [
+            "INPUT",
+            "REQUIREMENT",
+            "TEST",
+            "ENVIRONMENT"
+          ]
+        },
+        "related_ids": {
+          "$ref": "#/$defs/textList"
+        },
+        "reason": {
+          "$ref": "#/$defs/text"
+        },
+        "next_action": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "exit_code",
+        "output_tail"
+      ],
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/text"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_tail": {
+          "type": "string"
+        }
       }
     }
   }
