@@ -1,24 +1,54 @@
 {
+  "task_id": "WORK-021",
+  "requirements_hash": "3f5b0c2d9a8e7f6b1c4d2e0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c",
   "status": "BLOCKED",
   "summary": "탈퇴한 회원이 올린 파일을 삭제할 때 팀 문서에 공유된 파일을 어떻게 처리할지 결정이 필요하다.",
   "scope": {
     "change": "탈퇴한 회원이 올린 파일을 삭제한다.",
-    "reviewed_sources": ["예시 코드의 getTeamAttachment 함수"],
-    "limitations": ["탈퇴 후 팀 문서에 공유된 파일의 보존 정책을 확인하지 못했다."]
+    "reviewed_sources": [
+      "예시 코드의 getTeamAttachment 함수"
+    ],
+    "limitations": [
+      "탈퇴 후 팀 문서에 공유된 파일의 보존 정책을 확인하지 못했다."
+    ]
   },
   "coverage": [
     {
       "criterion_id": "AC-01",
       "expected_change": "회원이 탈퇴하면 해당 회원이 올린 파일을 삭제한다.",
       "assessment": "CANDIDATES_IDENTIFIED",
-      "candidate_ids": ["REG-01"],
+      "candidate_ids": [
+        "REG-01"
+      ],
       "rationale": "팀 문서와 회원 업로드가 같은 파일 ID를 참조한다."
+    }
+  ],
+  "consumers": [
+    {
+      "resource": "회원 업로드 파일 ID",
+      "consumer": "팀 문서 첨부 다운로드",
+      "kind": "DIRECT_CALL",
+      "source": "예시 코드의 getTeamAttachment 함수",
+      "candidate_ids": [
+        "REG-01"
+      ],
+      "rationale": null
+    },
+    {
+      "resource": "회원 업로드 파일 ID",
+      "consumer": "업로드 통계 집계",
+      "kind": "EVENT_SUBSCRIBER",
+      "source": "예시 설정의 upload.stored 구독",
+      "candidate_ids": [],
+      "rationale": "업로드 수만 세고 파일 ID 를 다시 읽지 않아 삭제의 영향을 받지 않는다."
     }
   ],
   "regression_candidates": [
     {
       "id": "REG-01",
-      "criterion_ids": ["AC-01"],
+      "criterion_ids": [
+        "AC-01"
+      ],
       "importance": "REQUIRED",
       "assessment": "POTENTIAL",
       "current_behavior": "팀 구성원은 팀 문서에 첨부된 파일을 다운로드할 수 있다.",
@@ -37,7 +67,10 @@
     {
       "id": "ISSUE-01",
       "kind": "REQUESTER_DECISION",
-      "related_ids": ["AC-01", "REG-01"],
+      "related_ids": [
+        "AC-01",
+        "REG-01"
+      ],
       "reason": "공유 파일을 삭제하면 팀 문서에서 다운로드할 수 없고, 보존하면 해당 파일은 회원 탈퇴 후에도 저장소에 남는다.",
       "next_action": "팀 문서가 참조하는 파일도 삭제할지, 팀 문서의 다운로드를 유지하기 위해 보존할지 요청자에게 확인한다."
     }

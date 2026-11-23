@@ -10,7 +10,7 @@
 | `reset.mjs` | 앱 DB 와 file-store 데이터 전체 초기화 |
 | `seed.mjs` | 첨부 교체 과제 데이터를 API 로 입력 (교체 대상 A·B·C·E, 비교 대상 D) |
 | `grade.mjs` | 이전 보존 정리 과제의 채점. 첨부 교체 과제 채점은 아직 없다 |
-| `skills/` | 피드백 루프 조건에서만 설치하는 Codex 스킬 4개 (`orchestrate-feedback` 이 진입점) |
+| `skills/` | 피드백 루프 조건에서만 설치하는 Codex 스킬 4개 (`orchestrate-feedback` 이 진입점). 노드 이동은 `orchestrate-feedback/scripts/transition.mjs` 로만 하며 Node.js 18 이상이 필요하다 |
 
 Node.js 24 이상에서 의존성 없이 실행한다.
 
@@ -51,7 +51,7 @@ Node.js 24 이상에서 의존성 없이 실행한다.
    mkdir -p $STUDY/app/.codex && cp -R skills $STUDY/app/.codex/   # 키트를 지우기 전에 스킬 설치
    ```
 
-   같은 방식으로 진행하고, 티켓 앞에 `$orchestrate-feedback` 을 붙여 스킬을 호출한다. 스킬은 `$STUDY/app/.codex` 에만 설치한다. `~/.codex/skills` 처럼 전역 위치에 두면 단순 세션 조건에도 적용된다. 채점이 끝나면 `$STUDY/app/.codex` 를 지운다.
+   같은 방식으로 진행하고, 티켓 앞에 `$orchestrate-feedback` 을 붙여 스킬을 호출한다. 스킬은 `$STUDY/app/.codex` 에만 설치한다. `~/.codex/skills` 처럼 전역 위치에 두면 단순 세션 조건에도 적용된다. 스킬의 산출물(요구사항, 분석, 확정 케이스, 구현 보고, 검증 결과, 전이 기록)은 `$STUDY/app/.feedback/<task_id>/` 에 남는다. 채점이 끝나면 산출물을 실행용 브랜치에 커밋하고 `$STUDY/app/.codex` 를 지운다.
 
 ## 채점
 
