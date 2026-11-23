@@ -46,6 +46,12 @@ const incidents = [
   ]) },
 ]
 
+// 외부 공유. A 와 D 를 서로 다른 사람에게 공유한다 (레거시 API).
+const shares = [
+  { incidentId: 'INC-2001', grantee: 'auditor@partner.example' },
+  { incidentId: 'INC-2004', grantee: 'reviewer@partner.example' },
+]
+
 // 교체 대상 E 가 들어간 작업은 실행하지 않고 대기 상태로 둔다. 다른 작업은 미리 실행해 둔다.
 const exportsToCreate = [
   { incidentIds: ['INC-2006', 'INC-2007'], run: true },
@@ -86,12 +92,21 @@ try {
     jobs.push({ id: created.id, incidentIds: job.incidentIds, run: job.run })
   }
 
+  for (const share of shares) {
+    const result = await call('POST', 'legacy/share', share)
+    if (result.result !== 'OK') throw new Error(`공유 실패 ${share.incidentId}: ${result.message}`)
+  }
+  const archived = await call('POST', 'legacy/archive/run', {})
+  if (archived.result !== 'OK') throw new Error(`장기 보관 실패: ${archived.message}`)
+
   const usage = await call('GET', 'storage/usage')
   process.stdout.write(`이벤트 ${incidents.length}건, 보고서 ${incidents.filter(({ report }) => report).length}건, 내보내기 작업 ${jobs.length}건을 넣었습니다. 파일 ${usage.files}개\n\n`)
   for (const incident of incidents.filter(({ role }) => role !== '-')) {
     process.stdout.write(`${incident.role}  ${incident.id}  ${incident.file}${incident.report ? `  보고서 ${incident.report}` : ''}\n`)
   }
   for (const job of jobs) process.stdout.write(`내보내기 ${job.id}  ${job.incidentIds.join(', ')}  ${job.run ? '실행 완료' : '대기'}\n`)
+  for (const share of shares) process.stdout.write(`공유 ${share.incidentId} → ${share.grantee}\n`)
+  process.stdout.write(`장기 보관 ${archived.data.archived.length}건\n`)
 } catch (error) {
   fail(error)
 }

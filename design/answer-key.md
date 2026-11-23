@@ -60,6 +60,36 @@ file-store/     파일 저장소. 내용 기반 중복 제거
 
 교체를 `attachment.stored` 로 처리하면 `stats` 의 첨부 수가 1 늘어난다. 교체 전용 토픽을 만들거나 핸들러가 교체를 구분해야 한다.
 
+## 확장 도메인 — 첨부와 무관해 보이는 네 기능
+
+각 기능은 대부분 독립적으로 동작하고, 첨부 파일 ID 와는 한두 군데에서만 이어진다. 연결점은 모두 실행해야 드러나도록 두었다. 이름은 또 다르게 붙였고 README 에는 적지 않았다.
+
+| 기능 | 위치 (API 세대) | 첨부를 부르는 이름 | 연결점 | 결합 유형 | 교체하면 깨지는 것 |
+| --- | --- | --- | --- | --- | --- |
+| 접근 권한 공유 | 부여: 레거시 `POST /legacy/share`, 확인·다운로드: v3 `GET /v3/shared/:grantee/:incidentId` | `blobRef` (`share_grants.blob_ref`) | 권한을 이벤트가 아니라 **부여 당시 파일 ID** 로 저장하고, v3 는 이벤트의 현재 파일 ID 로 권한을 찾는다. 행에는 `case_ref` 도 있다 | 같은 값을 다른 테이블에서 공유 | 새 파일에 권한이 없어 공유받은 사람이 403. 반대로 `blob_ref` 기준으로 옮기면 같은 파일을 쓰던 다른 이벤트의 권한까지 바뀐다 |
+| 저장 용량 과금 | 집계: 이벤트 버스 `billing.recordUsage`, 조회: v3 `GET /v3/billing/usage/:team` | `ledgerRef` | 팀별 장부 `usage_ledger.entries` JSON 에 파일 ID 와 크기를 넣는다. 팀은 `config/teams.json` 의 접두사 규칙으로 정한다. 같은 팀에서 같은 파일은 한 번만 센다. 조회는 `GLOBAL` 의 전역 캐시를 먼저 본다 | JSON 안의 참조 + 전역 캐시 | 옛 파일 크기가 장부에 남거나, 같은 팀의 다른 이벤트가 쓰는 파일을 장부에서 빼 버림. 캐시가 옛 값을 돌려줌 |
+| 장기 보관 | 실행: 레거시 `POST /legacy/archive/run`, 조회: v3 `GET /v3/archive/:incidentId` | `vaultId` | `config/global.json` 의 `archiveEngine` 문자열로 `ARCHIVE.ts` 를 동적으로 불러온다. 실제 보관은 `child_process.fork` 로 띄운 `workers/ARCHIVE_WORKER.ts` 가 하고, 워커는 **자기 메모리와 `vault-index.json`** 에 이벤트별 보관 파일을 기록한다. 이미 보관한 이벤트는 건너뛴다. 워커에는 `evict` 메시지 처리가 있지만 아무도 보내지 않는다 | 별도 프로세스 + 파일 사본 + 예약 작업 | 교체 후 보관을 다시 돌려도 옛 파일이 보관본으로 남음 |
+| 웹훅 발송 | 발송: 이벤트 버스 `webhook.dispatch`, 수신: v3 `POST /v3/webhook-sink`, 재전송: 레거시 `POST /legacy/webhooks/retry` | `sigRef` | 발송 본문에 내용 해시(`sigRef`)를 넣고 `GLOBAL` 의 비밀 키로 서명해 `webhook_deliveries` 에 저장한 뒤 내부 HTTP 로 수신 엔드포인트에 보낸다. 재전송은 저장된 본문과 서명을 그대로 다시 보낸다 | 직렬화된 값 + 내부 HTTP | 교체를 발송하지 않으면 외부 시스템은 옛 해시만 알고 있음 |
+
+공유 권한은 파일 ID 로 확인하기 때문에, 같은 파일을 쓰는 다른 이벤트까지 열린다. seed 에서 D 를 공유받은 사람은 C 도 내려받을 수 있다. 교체 전부터 있던 결함이라 채점에는 쓰지 않는다.
+
+`ARCHIVE2.ts`(같은 프로세스에서 도는 대안)와 `ARCHIVE_prev.ts`(이전 구현)도 있지만 실제로는 `ARCHIVE.ts` 만 쓰인다. 어느 것이 쓰이는지는 `config/global.json` 한 곳으로만 결정된다.
+
+## zenius-siem-be 에서 가져온 구조 패턴
+
+코드는 가져오지 않았고, 복잡도를 만드는 형태만 따랐다.
+
+| 패턴 | 이 앱에서의 위치 |
+| --- | --- |
+| API 세대 공존 | 레거시 `server/routing.ts`(분기문 하나, `{ result, code, data }` 응답), 현재 `server/modules/*`, 새 구조 `server/v3/features/*` (`v3/features.json` 으로 등록) |
+| 거의 같은 파일의 변종 | `ARCHIVE.ts`, `ARCHIVE2.ts`, `ARCHIVE_prev.ts` |
+| 루트의 대문자 모듈 | `server/GLOBAL.ts`, `server/MYLIB.ts`, `server/ARCHIVE*.ts` |
+| 전역 가변 상태 + 설정 파일 저장 | `GLOBAL.ts` 가 `global.APP_STATE` 에 용량 캐시·웹훅 키·마지막 보관 시각을 두고 `.data/evidence/global-state.json` 에 저장 |
+| 프로세스 간 결합 | 보관 워커와 `process.send` 메시지 |
+| 잡동사니 공용 모듈 | `MYLIB.ts` (해시, 팀 판정, 파일 읽기, 날짜) |
+| 문자열로 고르는 구현 | `archiveEngine` 으로 동적 `import` |
+| JSON 설정 | `config/teams.json`, `config/global.json`, `v3/features.json` |
+
 ## 파일 저장소 — 내용 기반 중복 제거
 
 같은 내용을 올리면 같은 ID 를 돌려준다. 그래서 서로 다른 이벤트, 보고서, export 작업이 한 파일을 공유할 수 있다.
@@ -103,6 +133,10 @@ seed 에서 교체 대상과 그 주변을 준비하고, 교체 뒤 아래를 �
 | E10 | 감사 로그 | 교체 기록 1건, 옛·새 파일 ID 포함 | 기록 누락 |
 | E11 | 알림 대기열 | 교체 알림 1건, 새 파일 ID | 누락, 또는 옛 ID |
 | E12 | 없는 이벤트·첨부 없는 이벤트 교체 | 404 | 500 |
+| E13 | A 를 공유받은 사람의 v3 다운로드, D 를 공유받은 사람의 v3 다운로드 | A 는 새 내용으로 200, D 는 그대로 200 | 권한이 옛 파일 ID 에 묶여 A 가 403. 또는 `blob_ref` 로 옮겨 D 권한까지 바뀜 |
+| E14 | `GET /v3/billing/usage/core` | 사용량이 `core` 팀 이벤트들의 현재 첨부(같은 파일은 한 번) 크기 합과 같다 | 옛 파일이 장부에 남음, 공유 파일을 장부에서 뺌, 전역 캐시가 옛 값 |
+| E15 | 교체 후 `POST /legacy/archive/run`, `GET /v3/archive/INC-2001` | 새 내용 | 워커가 이미 보관한 이벤트를 건너뛰어 옛 내용 |
+| E16 | 웹훅 수신 기록 `GET /v3/webhook-sink?caseNo=INC-2001` 의 최신 항목 | `sigRef` 가 새 파일의 해시이고 서명 검증 통과 | 교체를 발송하지 않아 최신 항목이 옛 해시 |
 
 화면 확인 (수동): 이벤트 상세의 첨부·미리보기가 새 파일로 바뀌는지, 대시보드 바이트가 바뀌는지.
 
@@ -114,4 +148,8 @@ seed 에서 교체 대상과 그 주변을 준비하고, 교체 뒤 아래를 �
 | 교체 대상 B | 감사 보고서 연결 | E3 |
 | 교체 대상 C, 비교 대상 D | C 와 D 의 첨부 내용이 같음 (파일 공유) | E4 |
 | 교체 대상 E | 교체 전에 export 작업 요청 (실행 전) | E5 |
+| 공유 권한 | A 를 `auditor@partner` 에게, D 를 `reviewer@partner` 에게 공유 (레거시 API) | E13 |
+| 팀 규칙 | `INC-200*` 는 `core` 팀, `INC-201*` 는 `edge` 팀. C 와 D 가 같은 `core` 팀이라 공유 파일을 한 번만 센다 | E14 |
+| 장기 보관 | seed 마지막에 보관을 한 번 실행해 모든 이벤트를 보관해 둔다 | E15 |
+| 웹훅 | 첨부를 만들 때마다 자동 발송된다 | E16 |
 | 그 밖의 이벤트 | 평범한 데이터 | 대시보드·검색 결과가 자연스럽게 보이도록 |
