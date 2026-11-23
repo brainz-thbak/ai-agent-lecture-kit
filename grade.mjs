@@ -1,253 +1,238 @@
-// 사용법: node grade.mjs [API 주소] [--detail]   (기본값 http://localhost:8080)
-// task.md 티켓의 요구사항별로 HTTP 응답만 보고 채점한다. 코드와 DB 는 보지 않는다.
-// seed 직후 상태에서 한 번만 실행한다. 실행하면서 정리·법적 보존 상태를 바꾸므로 다시 채점하려면 reset 과 seed 부터 한다.
-// --detail 은 요구사항별 개별 검사 결과를 함께 출력한다.
-import { fixtures } from './fixtures.mjs'
+// 사용법: node grade.mjs [API 주소]   (기본값 http://localhost:8080)
+// 첨부 교체 과제를 HTTP 응답만 보고 채점한다. 코드와 DB 는 보지 않는다.
+// seed 직후 상태에서 한 번만 실행한다. A·B·C·E 를 실제로 교체하므로, 다시 채점하려면 reset 과 seed 부터 한다.
+// 기준은 design/answer-key.md 의 E1~E16 이다.
 import { fail, formatKst } from './lib.mjs'
 
-const retentionMs = 336 * 60 * 60 * 1000
-const boundaryMarginMs = 10 * 60 * 1000
-const sharedReport = 'AUD-2001'
-const purgedSample = 'INC-1004'
-const holdSample = 'INC-1001'
-const releasedHold = 'INC-1008'
+const api = `${(process.argv[2] ?? process.env.API_URL ?? 'http://localhost:8080').replace(/\/+$/, '')}/`
 
-const requirements = {
-  1: '336시간 지난 처리 완료 건만 정리',
-  2: '법적 보존 건 제외',
-  3: '보고서가 쓰는 파일 보존, 이벤트에서는 정리',
-  4: '파일 저장소에서 삭제',
-  5: '응답 건수와 재실행 결과',
-  6: '실행 중 재호출은 409',
-  7: '법적 보존 설정·해제 API',
-  8: '정리된 이벤트에 법적 보존 설정 거부',
-  9: '법적 보존 해제 후 다음 실행에 정리',
-  10: '정리된 이벤트로 보고서 생성 거부',
-  11: 'attachmentPurgedAt 과 410',
-  12: '대시보드 7일 내 정리 예정 수',
-  13: '정리 이력 조회',
+const SEED = {
+  'INC-2001': 'payments-gateway.log',
+  'INC-2002': 'settlement-batch.log',
+  'INC-2003': 'auth-refresh.log',
+  'INC-2004': 'auth-gateway.log',
+  'INC-2005': 'backup-worker.log',
 }
-const manual = [
-  [4, '파일 삭제에 실패한 뒤 다음 실행에서 다시 삭제하는지 (파일 저장소를 멈춘 상태에서 실행해 확인)'],
-  [7, '이벤트 상세 화면에서 법적 보존을 켜고 끌 수 있는지'],
-  [10, '정리된 이벤트에서 보고서 만들기 버튼이 비활성인지'],
-  [11, '정리된 이벤트 상세에 "보존기간 만료로 정리됨" 표시, 처음부터 첨부가 없던 경우와 구분'],
-  [12, '대시보드에 7일 안에 정리될 첨부 수 표시'],
-]
-const automatic = Object.keys(requirements).map(Number).filter((id) => id !== 12)
+const REPLACE = {
+  A: { id: 'INC-2001', name: 'payments-gateway-v2.log', content: 'REPLACED-A payments rollback complete' },
+  B: { id: 'INC-2002', name: 'settlement-batch-v2.log', content: 'REPLACED-B settlement rerun ok' },
+  C: { id: 'INC-2003', name: 'auth-refresh-v2.log', content: 'REPLACED-C auth fixed' },
+  E: { id: 'INC-2005', name: 'backup-worker-v2.log', content: 'REPLACED-E backup recovered' },
+}
+const REPORT = 'AUD-3001'
+const AUDITOR = 'auditor@partner.example'
+const REVIEWER = 'reviewer@partner.example'
+const CORE_PREFIX = 'INC-200'
 
-const args = process.argv.slice(2)
-const detail = args.includes('--detail')
-const apiArgument = args.find((arg) => !arg.startsWith('--'))
-const api = `${(apiArgument ?? process.env.API_URL ?? 'http://localhost:8080').replace(/\/+$/, '')}/`
-
-async function request(method, path, body) {
+async function call(method, path, body) {
   try {
     const response = await fetch(new URL(path, api), {
       method,
       headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(15000),
     })
-    const text = await response.text()
+    const buffer = Buffer.from(await response.arrayBuffer())
+    const text = buffer.toString('utf8')
     let json
     try {
       json = JSON.parse(text)
     } catch {}
-    return { status: response.status, json, text: text.slice(0, 160) }
+    return { status: response.status, text, json, bytes: buffer.length, disposition: response.headers.get('content-disposition') || '' }
   } catch (error) {
-    return { status: 0, text: `요청 실패: ${error instanceof Error ? error.message : error}` }
+    return { status: 0, text: `요청 실패: ${error instanceof Error ? error.message : error}`, bytes: 0, disposition: '' }
   }
 }
 
-const checks = []
-const skips = new Map()
-function check(req, step, name, expected, actual, pass) {
-  checks.push({ req, step, name, expected: String(expected), actual: String(actual), pass })
+const get = (path) => call('GET', path)
+const enc = encodeURIComponent
+const short = (value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 70)
+const results = []
+function record(id, title, verdict, reason) {
+  results.push({ id, title, verdict, reason })
 }
-const ok = (status) => status >= 200 && status < 300
-const attachmentPath = (id) => `incidents/${encodeURIComponent(id)}/attachment`
-const filesNow = async () => (await request('GET', 'storage/usage')).json?.files ?? '조회 실패'
 
-// 0. seed 상태 확인과 기대 결과 계산
-const initial = await request('GET', 'incidents')
-if (!Array.isArray(initial.json)) fail(`API 에 연결할 수 없습니다 (${api}): ${initial.status} ${initial.text}`)
+// ─── 0. seed 상태 확인 ──────────────────────────────────────────────────────
 
-const now = Date.now()
+const incidents = await get('incidents')
+if (!Array.isArray(incidents.json)) fail(`API 에 연결할 수 없습니다 (${api}): ${incidents.status} ${short(incidents.text)}`)
+const byId = new Map(incidents.json.map((incident) => [incident.id, incident]))
+for (const [id, name] of Object.entries(SEED)) {
+  const incident = byId.get(id)
+  if (!incident?.attachment) fail(`${id} 가 없거나 첨부가 없습니다. reset 과 seed 를 다시 하세요.`)
+  if (incident.attachment.name !== name) fail(`${id} 의 첨부가 seed 와 다릅니다 (${incident.attachment.name}). 이미 교체된 상태입니다. reset 과 seed 를 다시 하세요.`)
+}
 const warnings = []
-const byId = new Map(initial.json.map((incident) => [incident.id, incident]))
-const extra = initial.json.filter((incident) => !fixtures.some((fixture) => fixture.id === incident.id))
-if (extra.length) warnings.push(`seed 에 없는 이벤트 ${extra.length}건이 있습니다 (${extra.map(({ id }) => id).join(', ')}). 파일 수 기대값이 맞지 않을 수 있습니다.`)
+const archived = await get('v3/archive')
+if (!Array.isArray(archived.json) || archived.json.length < 10) warnings.push('장기 보관본이 seed 보다 적습니다. seed 마지막의 보관 실행이 빠졌을 수 있습니다.')
+const shareA = await get(`v3/shared/${AUDITOR}/INC-2001`)
+if (shareA.status !== 200) warnings.push(`A 공유가 seed 상태가 아닙니다 (${shareA.status}).`)
 
-const cases = fixtures.map((fixture) => {
-  const incident = byId.get(fixture.id)
-  if (!incident) {
-    warnings.push(`${fixture.id} 가 없습니다. reset 과 seed 를 다시 하세요.`)
-    return { fixture, missing: true, purge: fixture.expect.startsWith('purge') }
-  }
-  if (!incident.attachment) warnings.push(`${fixture.id} 의 첨부가 채점 전에 이미 없습니다. 에이전트가 정리 API 를 미리 호출했다면 reset 과 seed 를 다시 하세요.`)
-  const closedAt = typeof incident.closedAt === 'string' ? Date.parse(incident.closedAt) : null
-  const elapsed = closedAt === null ? null : now - closedAt
-  const purge = elapsed !== null && elapsed >= retentionMs && incident.legalHold !== true
-  if (elapsed !== null && Math.abs(elapsed - retentionMs) < boundaryMarginMs) {
-    warnings.push(`${fixture.id} 가 336시간 경계에서 ${Math.round(Math.abs(elapsed - retentionMs) / 60000)}분 떨어져 있습니다. 결과가 실행 시각에 따라 달라질 수 있습니다.`)
-  }
-  if (purge !== fixture.expect.startsWith('purge')) {
-    warnings.push(`${fixture.id} 의 현재 기대 결과(${purge ? '정리' : '유지'})가 fixtures 의 의도(${fixture.expect})와 다릅니다. seed 와 같은 날 00:30~23:30(KST)에 채점하세요.`)
-  }
-  return { fixture, purge, attachmentId: incident.attachment?.id }
-})
-const purgeCount = cases.filter(({ purge }) => purge).length
-const deleteCount = cases.filter(({ fixture, purge }) => purge && !fixture.report).length
-const expectedFiles = fixtures.length - deleteCount
+// ─── 1. 교체 전 기준값 ──────────────────────────────────────────────────────
 
-// 1. 정리 API 동시 호출
-const concurrent = await Promise.all([
-  request('POST', 'maintenance/retention'),
-  request('POST', 'maintenance/retention'),
-])
-const succeeded = concurrent.filter(({ status }) => ok(status))
-const conflicted = concurrent.filter(({ status }) => status === 409)
-const concurrentActual = concurrent.map(({ status }) => status).join(', ')
-if (succeeded.length === 1 && conflicted.length === 1) check(6, 1, '동시 호출', '200, 409', concurrentActual, true)
-else if (succeeded.length === 2) skips.set(6, `동시 호출이 둘 다 성공했습니다 (${concurrentActual}). 실행이 겹치지 않았을 수 있어 판정하지 않습니다.`)
-else check(6, 1, '동시 호출', '200, 409', concurrentActual, false)
+const old = {}
+for (const [key, target] of Object.entries(REPLACE)) {
+  const fileId = byId.get(target.id).attachment.id
+  const blob = await get(`v1/blobs/${fileId}`)
+  old[key] = { fileId, content: blob.text, bytes: blob.bytes }
+}
+const dBefore = await get('incidents/INC-2004/attachment')
+const exportJob = (await get('exports')).json?.find((job) => job.status === 'queued' && job.items.some((item) => item.caseNo === 'INC-2005'))
+if (!exportJob) warnings.push('INC-2005 가 들어 있는 대기 중인 내보내기 작업이 없습니다.')
+await get('incidents/INC-2001/preview')
+await get('v3/billing/usage/core')
+const stats0 = (await get('stats')).json
+const audit0 = (await get('audit-log?subject=INC-2001&limit=1000')).json?.length ?? 0
+const outbox0 = (await get('notifications/outbox')).json?.filter((message) => message.payload?.caseNo === 'INC-2001').length ?? 0
 
-const firstRun = succeeded.reduce((sum, { json }) => ({
-  purgedAttachments: sum.purgedAttachments + (json?.purgedAttachments ?? NaN),
-  deletedFiles: sum.deletedFiles + (json?.deletedFiles ?? NaN),
-  failedFiles: sum.failedFiles + (json?.failedFiles ?? NaN),
-}), { purgedAttachments: 0, deletedFiles: 0, failedFiles: 0 })
-if (succeeded.length === 0) {
-  check(5, 1, '1차 실행 성공', '200', concurrentActual, false)
+// ─── 2. 교체 ────────────────────────────────────────────────────────────────
+
+const puts = {}
+for (const [key, target] of Object.entries(REPLACE)) {
+  puts[key] = await call('PUT', `incidents/${target.id}/attachment`, { name: target.name, content: target.content })
+}
+const newA = (await get('incidents/INC-2001')).json?.attachment?.id
+const failedPuts = Object.entries(puts).filter(([, response]) => response.status !== 200)
+
+// ─── 3. 채점 ────────────────────────────────────────────────────────────────
+
+// E1
+{
+  const download = await get('incidents/INC-2001/attachment')
+  const ok = puts.A.status === 200 && puts.A.json?.attachment?.name === REPLACE.A.name
+    && download.status === 200 && download.text === REPLACE.A.content && download.disposition.includes(enc(REPLACE.A.name))
+  record('E1', 'v2 첨부 다운로드', ok ? 'pass' : 'fail', ok ? '새 이름·새 내용' : `PUT ${puts.A.status}, 다운로드 ${download.status} ${short(download.text)}`)
+}
+// E2
+{
+  const v1 = await get('v1/evidence/INC-2001/content')
+  const ok = v1.status === 200 && v1.text === REPLACE.A.content
+  record('E2', 'v1 첨부 다운로드', ok ? 'pass' : 'fail', ok ? '새 내용' : `${v1.status} ${short(v1.text)}`)
+}
+
+const deleted = {}
+for (const key of Object.keys(REPLACE)) deleted[key] = (await get(`v1/blobs/${old[key].fileId}`)).status === 404
+const deletedAny = Object.values(deleted).some(Boolean)
+const trivialNote = '옛 파일을 하나도 지우지 않아 판정하지 않음'
+
+// E3
+{
+  const report = await get(`audit-reports/${REPORT}/attachment`)
+  const ok = report.status === 200 && report.text === old.B.content
+  record('E3', '보고서 증빙 유지', !deletedAny ? 'skip' : ok ? 'pass' : 'fail', !deletedAny ? trivialNote : ok ? '옛 내용 그대로' : `${report.status} ${short(report.text)}`)
+}
+// E4
+{
+  const d = await get('incidents/INC-2004/attachment')
+  const ok = d.status === 200 && d.text === dBefore.text
+  record('E4', '같은 파일을 쓰던 D', !deletedAny ? 'skip' : ok ? 'pass' : 'fail', !deletedAny ? trivialNote : ok ? 'D 그대로' : `${d.status} ${short(d.text)}`)
+}
+// E5
+if (!exportJob) {
+  record('E5', '대기 중인 내보내기', 'skip', '대기 중인 작업이 없음')
 } else {
-  check(5, 1, '1차 purgedAttachments', purgeCount, firstRun.purgedAttachments, firstRun.purgedAttachments === purgeCount)
-  check(5, 1, '1차 deletedFiles', deleteCount, firstRun.deletedFiles, firstRun.deletedFiles === deleteCount)
-  check(5, 1, '1차 failedFiles', 0, firstRun.failedFiles, firstRun.failedFiles === 0)
+  const run = await call('POST', `exports/${exportJob.id}/run`, {})
+  const bundle = await get(`exports/${exportJob.id}/bundle`)
+  const ok = run.json?.status === 'completed' && bundle.status === 200 && bundle.text.includes(old.E.content.trim())
+  record('E5', '대기 중인 내보내기', !deletedAny ? 'skip' : ok ? 'pass' : 'fail',
+    !deletedAny ? trivialNote : ok ? '실행 성공, 옛 내용 포함' : `${run.json?.status ?? run.status} ${short(run.json?.result?.error)}`)
+}
+// E6
+record('E6', '참조 없는 옛 파일 삭제', deleted.A ? 'pass' : 'fail', deleted.A ? 'A 의 옛 파일 404' : 'A 의 옛 파일이 남아 있음')
+// E7
+{
+  const fresh = (await get(`search?q=${enc(REPLACE.A.name)}`)).json || []
+  const oldName = (await get(`search?q=${enc(SEED['INC-2001'])}`)).json || []
+  const oldBody = (await get('search?q=upstream')).json || []
+  const ok = fresh.some((row) => row.incidentId === 'INC-2001') && !oldName.some((row) => row.incidentId === 'INC-2001') && !oldBody.some((row) => row.incidentId === 'INC-2001')
+  record('E7', '검색', ok ? 'pass' : 'fail', ok ? '새 이름으로만 검색됨' : `새 이름 ${fresh.length}건, 옛 이름 A ${oldName.filter((row) => row.incidentId === 'INC-2001').length}건, 옛 본문 A ${oldBody.filter((row) => row.incidentId === 'INC-2001').length}건`)
+}
+// E8
+{
+  const preview = (await get('incidents/INC-2001/preview')).json
+  const ok = preview?.name === REPLACE.A.name && String(preview?.body).startsWith(REPLACE.A.content)
+  record('E8', '미리보기', ok ? 'pass' : 'fail', ok ? '새 내용' : `${preview?.name} | ${short(preview?.body)}`)
+}
+// E9
+{
+  const stats = (await get('stats')).json
+  const delta = Object.keys(REPLACE).reduce((sum, key) => sum + Buffer.byteLength(REPLACE[key].content) - old[key].bytes, 0)
+  const expected = stats0.attachmentBytes + delta
+  const ok = stats?.attachmentCount === stats0.attachmentCount && stats?.attachmentBytes === expected
+  record('E9', '대시보드 카운터', ok ? 'pass' : 'fail', `수 ${stats0.attachmentCount}→${stats?.attachmentCount}, 바이트 ${stats0.attachmentBytes}→${stats?.attachmentBytes} (기대 ${expected})`)
+}
+// E10
+{
+  const entries = (await get('audit-log?subject=INC-2001&limit=1000')).json || []
+  const added = entries.slice(0, Math.max(0, entries.length - audit0))
+  const withNew = added.filter((entry) => JSON.stringify(entry).includes(newA))
+  const withBoth = withNew.filter((entry) => JSON.stringify(entry).includes(old.A.fileId))
+  const verdict = withBoth.length ? 'pass' : withNew.length ? 'partial' : 'fail'
+  record('E10', '감사 로그', verdict, verdict === 'pass' ? '교체 기록에 옛·새 ID' : verdict === 'partial' ? '새 ID 기록, 옛 ID 없음' : '교체 기록 없음')
+}
+// E11
+{
+  const messages = (await get('notifications/outbox')).json?.filter((message) => message.payload?.caseNo === 'INC-2001') || []
+  const added = messages.slice(0, Math.max(0, messages.length - outbox0))
+  const ok = added.some((message) => JSON.stringify(message.payload).includes(newA))
+  record('E11', '알림 대기열', ok ? 'pass' : 'fail', ok ? '새 ID 알림' : `추가된 알림 ${added.length}건`)
+}
+// E12
+{
+  const missing = await call('PUT', 'incidents/NOPE-404/attachment', { name: 'x.log', content: 'x' })
+  record('E12', '없는 이벤트 교체', missing.status === 404 ? 'pass' : 'fail', `${missing.status}`)
+}
+// E13
+{
+  const a = await get(`v3/shared/${AUDITOR}/INC-2001`)
+  const d = await get(`v3/shared/${REVIEWER}/INC-2004`)
+  const ok = a.status === 200 && a.text === REPLACE.A.content && d.status === 200 && d.text === dBefore.text
+  record('E13', '공유 권한', ok ? 'pass' : 'fail', `A 공유자 ${a.status}${a.status === 200 ? (a.text === REPLACE.A.content ? ' 새 내용' : ' 옛 내용') : ''}, D 공유자 ${d.status}`)
+}
+// E14
+{
+  const current = (await get('incidents')).json || []
+  const files = [...new Set(current.filter((incident) => incident.id.startsWith(CORE_PREFIX) && incident.attachment).map((incident) => incident.attachment.id))]
+  let expected = 0
+  for (const fileId of files) expected += (await get(`v1/blobs/${fileId}`)).bytes
+  const usage = (await get('v3/billing/usage/core')).json
+  const ok = usage?.usedBytes === expected
+  record('E14', '팀 용량 장부', ok ? 'pass' : 'fail', `core ${usage?.usedBytes} 바이트·장부 ${usage?.entries}건 (기대 ${expected} 바이트·${files.length}건)`)
+}
+// E15
+{
+  const run = await call('POST', 'legacy/archive/run', {})
+  const copy = await get('v3/archive/INC-2001')
+  const ok = copy.status === 200 && copy.text === REPLACE.A.content
+  record('E15', '장기 보관', ok ? 'pass' : 'fail', ok ? '새 내용으로 보관' : `보관 실행 ${run.json?.result ?? run.status}, 보관본 ${short(copy.text)}`)
+}
+// E16
+{
+  const received = (await get('v3/webhook-sink?caseNo=INC-2001')).json || []
+  const latest = received[0]
+  const ok = latest?.sigRef === newA && latest?.verified === true
+  record('E16', '웹훅', ok ? 'pass' : 'fail', ok ? '새 해시, 서명 검증 통과' : `최신 ${String(latest?.sigRef).slice(0, 10)} verified=${latest?.verified}`)
 }
 
-// 2. 1차 결과
-async function inspect(step) {
-  const snapshot = {}
-  for (const item of cases) {
-    const { id, report } = item.fixture
-    const code = (await request('GET', attachmentPath(id))).status
-    snapshot[id] = code
-    const req = id === releasedHold ? 2 : report === sharedReport ? 3 : 1
-    check(req, step, `${id} 첨부 다운로드`, item.purge ? '200 아님' : 200, code, item.purge ? code !== 200 : code === 200)
-
-    const incident = await request('GET', `incidents/${encodeURIComponent(id)}`)
-    const purgedAt = incident.json?.attachmentPurgedAt
-    if (item.purge) {
-      check(11, step, `${id} 첨부 다운로드 코드`, 410, code, code === 410)
-      check(11, step, `${id} 이벤트 조회`, 200, incident.status, incident.status === 200)
-      check(11, step, `${id} attachmentPurgedAt`, '시각', purgedAt ?? 'null', typeof purgedAt === 'string' && !Number.isNaN(Date.parse(purgedAt)))
-    } else {
-      check(11, step, `${id} attachmentPurgedAt`, 'null', purgedAt === undefined ? '없음' : purgedAt, purgedAt === null)
-    }
-  }
-  const reportCode = (await request('GET', `audit-reports/${sharedReport}/attachment`)).status
-  snapshot.report = reportCode
-  check(3, step, `${sharedReport} 보고서 다운로드`, 200, reportCode, reportCode === 200)
-  const files = await filesNow()
-  snapshot.files = files
-  check(4, step, '저장소 파일 수', expectedFiles, files, files === expectedFiles)
-  return snapshot
-}
-const first = await inspect(2)
-if (!cases.some(({ purge, fixture }) => purge && first[fixture.id] !== 200)) {
-  skips.set(2, '정리된 첨부가 하나도 없어 제외 규칙이 동작했는지 판정하지 않습니다.')
+// 교체 요청이 실패하면 "바뀌지 않았으니 기대값과 같다" 로 통과하는 항목이 생긴다. 교체 결과를 보는 항목은 실패로 바꾼다.
+if (failedPuts.length) {
+  const reason = `교체 요청 실패 (${failedPuts.map(([key, response]) => `${key} ${response.status}`).join(', ')})`
+  for (const result of results) if (result.id !== 'E12' && result.verdict !== 'fail') Object.assign(result, { verdict: 'fail', reason })
 }
 
-// 3. 재실행
-const rerun = await request('POST', 'maintenance/retention')
-check(5, 3, '재실행 상태', 200, rerun.status, ok(rerun.status))
-check(5, 3, '재실행 purgedAttachments', 0, rerun.json?.purgedAttachments ?? rerun.text, rerun.json?.purgedAttachments === 0)
-const before = checks.length
-const second = await inspect(3)
-checks.splice(before)
-const changed = Object.keys(first).filter((key) => first[key] !== second[key])
-check(5, 3, '재실행 후 결과 유지', '변화 없음', changed.length ? changed.map((key) => `${key} ${first[key]}→${second[key]}`).join(', ') : '변화 없음', changed.length === 0)
+// ─── 4. 출력 ────────────────────────────────────────────────────────────────
 
-// 4. 정리된 이벤트에 법적 보존 설정
-const holdPurged = await request('POST', `incidents/${purgedSample}/legal-hold`)
-check(8, 4, `${purgedSample} 법적 보존 설정`, 409, holdPurged.status, holdPurged.status === 409)
-
-// 5. 정리된 이벤트로 보고서 생성
-const purgedAttachment = cases.find(({ fixture }) => fixture.id === purgedSample)?.attachmentId
-const reportFromPurged = await request('POST', 'audit-reports', { id: 'AUD-GRADE-1', incidentId: purgedSample, attachmentId: purgedAttachment })
-check(10, 5, `${purgedSample} 로 보고서 생성`, 409, reportFromPurged.status, reportFromPurged.status === 409)
-
-// 6. 법적 보존 설정·해제
-const holdOn = await request('POST', `incidents/${holdSample}/legal-hold`)
-check(7, 6, `${holdSample} 설정`, '200, legalHold true', `${holdOn.status}, legalHold ${holdOn.json?.legalHold}`, holdOn.status === 200 && holdOn.json?.legalHold === true)
-const holdOnRead = await request('GET', `incidents/${holdSample}`)
-check(7, 6, `${holdSample} 설정 후 조회`, 'legalHold true', `legalHold ${holdOnRead.json?.legalHold}`, holdOnRead.json?.legalHold === true)
-const holdOff = await request('DELETE', `incidents/${holdSample}/legal-hold`)
-check(7, 6, `${holdSample} 해제`, '200, legalHold false', `${holdOff.status}, legalHold ${holdOff.json?.legalHold}`, holdOff.status === 200 && holdOff.json?.legalHold === false)
-const holdMissing = await request('POST', 'incidents/INC-0000/legal-hold')
-check(7, 6, '없는 이벤트에 설정', 404, holdMissing.status, holdMissing.status === 404)
-
-// 7. 법적 보존 해제 후 다음 실행
-const release = await request('DELETE', `incidents/${releasedHold}/legal-hold`)
-check(9, 7, `${releasedHold} 해제`, 200, release.status, release.status === 200)
-const afterRelease = await request('POST', 'maintenance/retention')
-check(9, 7, '해제 후 정리 실행', '200, purgedAttachments 1', `${afterRelease.status}, purgedAttachments ${afterRelease.json?.purgedAttachments}`, ok(afterRelease.status) && afterRelease.json?.purgedAttachments === 1)
-const releasedCode = (await request('GET', attachmentPath(releasedHold))).status
-check(9, 7, `${releasedHold} 첨부 다운로드`, '200 아님', releasedCode, releasedCode !== 200)
-const filesAfterRelease = await filesNow()
-check(9, 7, '저장소 파일 수', expectedFiles - 1, filesAfterRelease, filesAfterRelease === expectedFiles - 1)
-
-// 8. 정리 이력
-const expectedRuns = succeeded.length + [rerun, afterRelease].filter(({ status }) => ok(status)).length
-const runs = await request('GET', 'maintenance/retention/runs')
-const list = Array.isArray(runs.json) ? runs.json : null
-check(13, 8, '이력 조회', 200, runs.status, runs.status === 200 && list !== null)
-if (list) {
-  check(13, 8, '성공한 실행 수', expectedRuns, list.length, list.length === expectedRuns)
-  const shaped = list.every((run) => ['startedAt', 'finishedAt'].every((key) => typeof run?.[key] === 'string' && !Number.isNaN(Date.parse(run[key])))
-    && ['purgedAttachments', 'deletedFiles', 'failedFiles'].every((key) => Number.isInteger(run?.[key])))
-  check(13, 8, '항목 필드 5개', '형식 일치', shaped ? '형식 일치' : JSON.stringify(list[0] ?? null).slice(0, 80), shaped)
-  const ordered = list.every((run, index) => index === 0 || Date.parse(list[index - 1].startedAt) >= Date.parse(run.startedAt))
-  check(13, 8, '최신순 정렬', '최신순', ordered ? '최신순' : '순서 다름', ordered)
-  check(13, 8, '최신 항목 purgedAttachments', 1, list[0]?.purgedAttachments, list[0]?.purgedAttachments === 1)
-}
-
-// 출력
+const symbol = { pass: '✓', fail: '✗', partial: '△', skip: '–' }
+const count = (verdict) => results.filter((result) => result.verdict === verdict).length
 const out = (line = '') => process.stdout.write(`${line}\n`)
-const verdicts = automatic.map((id) => {
-  if (skips.has(id)) return { id, verdict: 'skip', reasons: [skips.get(id)] }
-  const failed = checks.filter(({ req, pass }) => req === id && !pass)
-  return { id, verdict: failed.length ? 'fail' : 'pass', reasons: failed.map(({ name, expected, actual }) => `${name}: 기대 ${expected}, 실제 ${actual}`) }
-})
-const passed = verdicts.filter(({ verdict }) => verdict === 'pass').length
-const skipped = verdicts.filter(({ verdict }) => verdict === 'skip').length
-const symbol = { pass: '✓', fail: '✗', skip: '–' }
-
-out(`채점 ${formatKst(new Date(now).toISOString())} (KST)  ${api}`)
+out(`채점 ${formatKst(new Date().toISOString())} (KST)  ${api}`)
 out()
-out(`자동 채점 요구사항 ${automatic.length}개 중 ${passed}개 충족${skipped ? ` (판정 불가 ${skipped})` : ''} · 12번은 화면에서 확인`)
+out(`16개 중 ${count('pass')}개 통과${count('partial') ? ` · 부분 ${count('partial')}` : ''}${count('skip') ? ` · 판정 불가 ${count('skip')}` : ''}`)
 out()
-for (const verdict of verdicts) {
-  out(`  ${symbol[verdict.verdict]} ${String(verdict.id).padStart(2)}. ${requirements[verdict.id]}`)
-  for (const reason of verdict.reasons.slice(0, 3)) out(`        ${reason}`)
-  if (verdict.reasons.length > 3) out(`        외 ${verdict.reasons.length - 3}건 (--detail 로 전체 확인)`)
-}
-out()
-out('화면·수동 확인')
-for (const [id, text] of manual) out(`  · ${String(id).padStart(2)}. ${text}`)
-
-if (detail) {
-  out()
-  out('개별 검사')
-  for (const { req, step, name, expected, actual, pass } of checks) {
-    out(`  ${pass ? 'PASS' : 'FAIL'}  요구 ${String(req).padStart(2)}  단계 ${step}  ${name}: 기대 ${expected}, 실제 ${actual}`)
-  }
-}
-
+for (const { id, title, verdict, reason } of results) out(`  ${symbol[verdict]} ${id.padEnd(4)} ${title}  —  ${reason}`)
 if (warnings.length) {
   out()
   out('경고')
-  for (const warning of [...new Set(warnings)]) out(`- ${warning}`)
+  for (const warning of warnings) out(`- ${warning}`)
 }
-process.exitCode = verdicts.every(({ verdict }) => verdict === 'pass') ? 0 : 1
+process.exitCode = results.every((result) => result.verdict === 'pass') ? 0 : 1
