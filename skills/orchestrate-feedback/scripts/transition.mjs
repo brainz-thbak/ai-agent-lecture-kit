@@ -4,7 +4,7 @@
 //
 //   node transition.mjs init <task_id> [--dir <작업 폴더>]
 //   node transition.mjs status --dir <작업 폴더>
-//   node transition.mjs move <다음 노드> --dir <작업 폴더> [--evidence <파일>] [--reason <사유>]
+//   node transition.mjs move <다음 노드> --dir <작업 폴더> [--evidence <파일>] [--reason <사유>] [--replace-implementer <사유>]
 //
 // 작업 폴더 기본값은 현재 디렉터리의 .feedback/<task_id> 다.
 import { createHash } from 'node:crypto'
@@ -150,6 +150,19 @@ function requireUnchanged(state, label) {
   if (state.cases_hash && sha256(state.cases_file) !== state.cases_hash) {
     reject(`${label}: 확정 케이스 파일이 바뀌었습니다. 확정 케이스는 구현과 검증 중에 수정하지 않습니다.`)
   }
+}
+
+// 파일 맨 위 --- 사이의 "키: 값" 줄을 읽는다.
+function frontMatter(text) {
+  const lines = text.split(/\r?\n/)
+  const end = lines.findIndex((line, index) => index > 0 && line === '---')
+  if (lines[0] !== '---' || end < 0) return {}
+  const values = {}
+  for (const line of lines.slice(1, end)) {
+    const match = line.match(/^([A-Za-z_][\w-]*)[ \t]*:[ \t]*(.*)$/)
+    if (match) values[match[1]] = match[2].trim().replace(/^(['"])(.*)\1$/, '$2')
+  }
+  return values
 }
 
 function caseIds(text) {
@@ -298,8 +311,21 @@ const GUARDS = {
   'implement>verify'(state, options) {
     requireUnchanged(state, '구현')
     const file = evidencePath(state, options.evidence, '구현 보고')
+    const report = frontMatter(readText(file))
+    const implementer = report.implementer_id
+    if (!nonEmptyText(implementer)) reject('구현 보고 front matter 에 implementer_id(구현 서브에이전트의 ID 또는 이름)가 필요합니다.')
+    if (report.task_id && report.task_id !== state.task_id) reject(`구현 보고의 task_id(${report.task_id})가 작업 ID(${state.task_id})와 다릅니다.`)
+    let note = `구현 보고 ${relative(state.dir, file)}, 구현자 ${implementer}`
+    if (state.implementer_id && state.implementer_id !== implementer) {
+      if (!nonEmptyText(options['replace-implementer'])) {
+        reject(`재작업은 기존 구현자(${state.implementer_id})에게 맡겨야 합니다. 이번 보고의 구현자는 ${implementer} 입니다.\n기존 구현자가 종료되어 이어서 맡길 수 없을 때만 --replace-implementer "<사유>" 로 교체를 기록하세요.`)
+      }
+      state.implementer_changes = [...(state.implementer_changes || []), { at: now(), from: state.implementer_id, to: implementer, reason: options['replace-implementer'] }]
+      note += ` (구현자 교체: ${options['replace-implementer']})`
+    }
+    state.implementer_id = implementer
     state.consumed.push(file)
-    return `구현 보고 ${relative(state.dir, file)}`
+    return note
   },
   'verify>verificationGate'(state, options) {
     requireUnchanged(state, '검증')
@@ -351,6 +377,8 @@ function init(positional, options) {
     commands: [],
     verification: null,
     feedback_rounds: 0,
+    implementer_id: null,
+    implementer_changes: [],
     consumed: [],
     created_at: now(),
   }
@@ -375,6 +403,8 @@ function status(state) {
     analysis: state.analysis,
     verification: state.verification,
     feedback_rounds: state.feedback_rounds,
+    implementer_id: state.implementer_id,
+    implementer_changes: state.implementer_changes,
   }
 }
 

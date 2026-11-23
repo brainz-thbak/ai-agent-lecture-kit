@@ -38,7 +38,7 @@ flowchart TD
 | `analyze → incomplete` | — | `--reason` 이 있다. 분석을 다시 실행해도 유효한 응답을 얻지 못한 경우에 쓴다. |
 | `requirementsGate → cases` / `revise` / `clarify` | — | 직전 분석 판정이 각각 PASS / REVISE / BLOCKED 다. |
 | `cases → implement` | `cases.md` | 요구사항이 분석 이후 바뀌지 않았다. 모든 `AC-xx` 와 분석의 `REQUIRED` 후보 `REG-xx` 가 케이스 파일에 나온다. `CASE-xx` 가 하나 이상 있다. 케이스 해시를 기록한다. |
-| `implement → verify` | `implementation-<n>.md` | 요구사항과 확정 케이스가 그대로다. |
+| `implement → verify` | `implementation-<n>.md` | 요구사항과 확정 케이스가 그대로다. 보고 front matter 에 `implementer_id` 가 있다. 재작업이면 첫 구현과 같은 구현자다. 구현자가 바뀌었으면 `--replace-implementer` 로 사유를 기록해야 넘어간다. |
 | `verify → verificationGate` | `verification-<n>.json` | 요구사항과 확정 케이스가 그대로다. 응답의 `task_id`·`requirements_file` 이 현재 작업과 같다. PASS 이면 모든 확정 케이스의 결과가 있고 필수 케이스가 모두 PASS 이며, `## 검증 명령` 의 모든 명령이 `commands` 에 종료 코드 0 으로 기록되어 있다. FAIL 이면 실패 케이스가, BLOCKED 이면 이슈가 있다. |
 | `verificationGate → done` / `feedback` / `resolve` | — | 직전 검증 판정이 각각 PASS / FAIL / BLOCKED 다. |
 | `→ incomplete` | — | `--reason` 에 미해결 항목과 사유가 있다. |
