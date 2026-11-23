@@ -34,11 +34,13 @@ Node.js 24 이상에서 의존성 없이 실행한다.
 
    **에이전트가 실행되는 동안 키트를 디스크에 두지 않는다.** 에이전트는 상위 폴더를 탐색해 `grade.mjs` 를 읽을 수 있다. seed 뒤에 키트 폴더를 지우고, 에이전트가 끝나면 다시 받는다.
 
-   `$STUDY/app` 에서 에이전트를 띄우고 `task.md` 의 티켓을 입력한다. 저장소 루트도 쓰기 가능하게 연다. `pnpm build` 가 루트의 `pnpm-lock.yaml` 과 `node_modules` 를 쓰기 때문에, `app` 만 열면 샌드박스가 막아 빌드를 확인하지 못한다. 두 조건 모두 같은 명령으로 띄운다.
+   `$STUDY/app` 에서 에이전트를 띄우고 `task.md` 의 문장을 입력한다. 두 조건 모두 같은 명령으로 띄운다.
 
    ```sh
-   cd $STUDY/app && codex --add-dir $STUDY
+   cd $STUDY/app && codex --dangerously-bypass-approvals-and-sandbox
    ```
+
+   샌드박스를 끄는 이유: 검증 명령 `pnpm build` 가 저장소 루트의 `pnpm-lock.yaml` 과 `node_modules` 를 건드리는데, Windows 샌드박스에서는 `--add-dir` 로 루트를 열어도 lockfile 쓰기가 거부되었다. 샌드박스가 꺼지면 에이전트가 저장소 밖 파일도 읽고 쓸 수 있으므로, 키트를 지우는 단계를 반드시 지킨다.
 
    에이전트가 질문하면 "티켓대로 진행해 주세요."라고만 답한다. 끝나면 키트를 다시 받아 서버가 켜진 상태에서 채점하고 결과를 브랜치에 커밋한다.
 
